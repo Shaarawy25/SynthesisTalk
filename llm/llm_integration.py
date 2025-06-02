@@ -1,3 +1,5 @@
+# backend/llm_integration.py
+
 import os
 import json
 import re
@@ -511,3 +513,155 @@ class ToolManager:
 
 # ─── Instantiate a single ToolManager ───────────────────────────────────────────────
 tool_manager = ToolManager()
+
+
+# ─── ReasoningEngine ────────────────────────────────────────────────────────────────
+class ReasoningEngine:
+    """Handle Chain of Thought and ReAct reasoning patterns"""
+
+    @staticmethod
+    def chain_of_thought(query: str, context: str = "") -> str:
+        """Perform Chain-of-Thought reasoning using Groq."""
+        prompt = f"""
+        Let's think step by step about this query: {query}
+        
+        Context: {context}
+        
+        1. What is being asked?
+        2. What information do I already have?
+        3. What steps should I follow?
+        4. What is my conclusion?
+        
+        Provide your reasoning and final answer.
+        """
+        try:
+            response = groq_client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {"role": "system", "content": "Use step-by-step reasoning."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=1500
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            logger.error(f"chain_of_thought error: {e}")
+            return f"Error during chain-of-thought reasoning: {str(e)}"
+
+    @staticmethod
+    async def react_reasoning(query: str, tool_manager: ToolManager, conversation_id: str) -> str:
+        """Perform ReAct reasoning with iterative tool calls."""
+        max_iterations = 3
+        reasoning_log: List[str] = []
+
+        try:
+            for i in range(max_iterations):
+                thought_prompt = f"""
+                Query: {query}
+                Previous reasoning steps: {reasoning_log[-2:] if reasoning_log else 'None'}
+
+                Available tools:
+                - web_search(query, num_results)
+                - document_summarize(collection_id, max_length)
+                - document_extract(collection_id, query, max_length)
+                - take_note(conversation_id, note, category)
+                - generate_insights(conversation_id)
+                - explain_concept(concept, level)
+                - clarify_information(information, context)
+
+                Think about the next action. If you have enough information, respond with 'finish'.
+                Otherwise, choose a tool and provide parameters.
+
+                Respond in the format:
+                Thought: ...
+                Action: <tool_name or 'finish'>
+                Parameters: {{ ... }}
+                """
+                response = groq_client.chat.completions.create(
+                    model="llama3-8b-8192",
+                    messages=[
+                        {"role": "system", "content": "You are a reasoning agent. Think step by step."},
+                        {"role": "user", "content": thought_prompt}
+                    ],
+                    max_tokens=500
+                )
+                reasoning_step = response.choices[0].message.content
+                reasoning_log.append(f"Iteration {i+1}: {reasoning_step}")
+
+                if re.search(r"Action:\s*finish", reasoning_step, re.IGNORECASE):
+                    logger.info("ReAct: finished reasoning loop")
+                    break
+
+                action_match = re.search(r"Action:\s*(\w+)", reasoning_step, re.IGNORECASE)
+                if not action_match:
+                    reasoning_log.append("No action identified; breaking.")
+                    break
+
+                action = action_match.group(1).lower()
+                params: Dict[str, Any] = {}
+                params_match = re.search(r"Parameters:\s*(\{.*\})", reasoning_step, re.DOTALL)
+                if params_match:
+                    try:
+                        params = json.loads(params_match.group(1))
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse parameters JSON: {params_match.group(1)}")
+
+                # Defaults and filtering for each tool
+                if action == "web_search":
+                    if "query" not in params:
+                        params["query"] = query
+                    params = {k: v for k, v in params.items() if k in ["query", "num_results"]}
+                elif action == "document_summarize":
+                    if "collection_id" not in params:
+                        logger.warning("Missing collection_id for document_summarize; skipping action")
+                        continue
+                    params = {k: v for k, v in params.items() if k in ["collection_id", "max_length"]}
+                elif action == "document_extract":
+                    if "collection_id" not in params or "query" not in params:
+                        logger.warning("Missing parameters for document_extract; skipping action")
+                        continue
+                    params = {k: v for k, v in params.items() if k in ["collection_id", "query", "max_length"]}
+                elif action == "take_note":
+                    if "conversation_id" not in params:
+                        params["conversation_id"] = conversation_id
+                    if "note" not in params:
+                        params["note"] = f"Note regarding: {query}"
+                    params = {k: v for k, v in params.items() if k in ["conversation_id", "note", "category"]}
+                elif action == "generate_insights":
+                    if "conversation_id" not in params:
+                        params["conversation_id"] = conversation_id
+                    params = {k: v for k, v in params.items() if k in ["conversation_id"]}
+                elif action == "explain_concept":
+                    if "concept" not in params:
+                        params["concept"] = query
+                    params = {k: v for k, v in params.items() if k in ["concept", "level"]}
+                elif action == "clarify_information":
+                    if "information" not in params:
+                        params["information"] = query
+                    params = {k: v for k, v in params.items() if k in ["information", "context"]}
+
+                logger.info(f"ReAct executing tool '{action}' with params {params}")
+                tool_result = await tool_manager.execute_tool(action, params)
+                reasoning_log.append(f"Tool '{action}' result: {tool_result}")
+
+            # After iterations, synthesize a final answer
+            final_prompt = f"""
+            Original query: {query}
+            Reasoning steps:
+            {json.dumps(reasoning_log, indent=2)}
+
+            Based on the above reasoning, provide a concise final answer.
+            """
+            final_response = groq_client.chat.completions.create(
+                model="llama3-8b-8192",
+                messages=[
+                    {"role": "system", "content": "Synthesize the reasoning and answer the query."},
+                    {"role": "user", "content": final_prompt}
+                ],
+                max_tokens=1000
+            )
+            return final_response.choices[0].message.content
+
+        except Exception as e:
+            logger.error(f"react_reasoning error: {e}")
+            return f"I encountered an error during reasoning. Here's a direct response: {query}"
