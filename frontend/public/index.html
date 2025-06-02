@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <link rel="icon" href="%PUBLIC_URL%/favicon.ico" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#000000" />
+    <meta
+      name="description"
+      content="SynthesisTalk - Intelligent Research Assistant with conversational interface, document analysis, web search, and advanced reasoning capabilities."
+    />
+    <link rel="apple-touch-icon" href="%PUBLIC_URL%/logo192.png" />
+    <link rel="manifest" href="%PUBLIC_URL%/manifest.json" />
+    
+    <!-- Favicon and App Icons -->
+    <link rel="shortcut icon" href="%PUBLIC_URL%/favicon.ico" />
+    
+    <!-- Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    
+    <title>SynthesisTalk - AI Research Assistant</title>
+    
+    <style>
+      /* Loading screen styles */
+      .loading-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        font-family: 'Inter', sans-serif;
+      }
+      
+      .loading-spinner {
+        width: 50px;
+        height: 50px;
+        border: 4px solid rgba(255, 255, 255, 0.3);
+        border-top: 4px solid white;
+        border-radius: 50%;
+        animation: spin 1s linear infinite;
+        margin-bottom: 20px;
+      }
+      
+      @keyframes spin {
+        0% { transform: rotate(0deg); }
+        100% { transform: rotate(360deg); }
+      }
+      
+      .loading-text {
+        font-size: 18px;
+        font-weight: 500;
+        margin-bottom: 8px;
+      }
+      
+      .loading-subtext {
+        font-size: 14px;
+        opacity: 0.8;
+      }
+    </style>
+  </head>
+  <body>
+    <noscript>You need to enable JavaScript to run this app.</noscript>
+    
+    <!-- Loading Screen (shown until React loads) -->
+    <div id="loading-screen" class="loading-container">
+      <div class="loading-spinner"></div>
+      <div class="loading-text">SynthesisTalk</div>
+      <div class="loading-subtext">Loading AI Research Assistant...</div>
+    </div>
+    
+    <!-- React App Root -->
+    <div id="root"></div>
+    
+    <script>
+      // Hide loading screen once React starts
+      window.addEventListener('DOMContentLoaded', function() {
+        setTimeout(function() {
+          const loadingScreen = document.getElementById('loading-screen');
+          if (loadingScreen && document.getElementById('root').children.length > 0) {
+            loadingScreen.style.display = 'none';
+          }
+        }, 1000);
+      });
+    </script>
+  </body>
+</html>
