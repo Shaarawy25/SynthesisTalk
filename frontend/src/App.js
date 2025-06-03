@@ -620,4 +620,372 @@ export default function SynthesisTalk() {
       </div>
     );
   };
+
+  // ─── DOCUMENTS PANEL ───────────────────────────────────────────────────────────────
+  const DocumentsPanel = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between p-6 border-b">
+        <h2 className="text-2xl font-bold flex items-center">
+          <FileText className="w-6 h-6 mr-2" />
+          Uploaded Documents
+        </h2>
+        <button
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isLoading}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+        >
+          <Upload className="w-4 h-4 mr-2 inline" />
+          Upload
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {uploadedFiles.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">
+            <FileText className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>No documents uploaded yet. Upload PDFs, DOCX, or TXT files to begin.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {uploadedFiles.map((file, idx) => (
+              <div key={idx} className="bg-white p-4 rounded-lg shadow-md border">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="font-semibold">{file.filename}</h3>
+                    <p className="text-sm text-gray-600">
+                      {file.chunk_count} chunks
+                    </p>
+                  </div>
+                  <div className="flex space-x-2">
+                    <button
+                      onClick={async () => {
+                        try {
+                          const result = await executeTool('document_summarize', {
+                            collection_id: file.collection_id
+                          });
+                          if (!result.success) {
+                            console.error('Summarize error:', result.error);
+                            alert(`Failed to summarize: ${result.error || 'Unknown'}`);
+                            return;
+                          }
+                          setUsageStats(prev => ({ ...prev, summaries: prev.summaries + 1 }));
+
+                          const sumMsg = {
+                            role: 'assistant',
+                            content: `📋 Summary:\n\n${result.summary}`,
+                            timestamp: new Date().toISOString()
+                          };
+                          setMessages(prev => [...prev, sumMsg]);
+                        } catch (error) {
+                          console.error('Summarize error:', error);
+                          alert('Failed to summarize');
+                        } finally {
+                          inputRef.current?.focus();
+                        }
+                      }}
+                      disabled={isLoading}
+                      className="px-3 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200 disabled:opacity-50"
+                    >
+                      Summarize
+                    </button>
+
+                    <button
+                      onClick={() => {
+                        setCurrentExtractCollection(file.collection_id);
+                        setExtractQuery('');
+                        setShowExtractModal(true);
+                      }}
+                      disabled={isLoading}
+                      className="px-3 py-1 bg-green-100 text-green-700 rounded hover:bg-green-200 disabled:opacity-50"
+                    >
+                      Extract
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── NOTES PANEL ───────────────────────────────────────────────────────────
+  const NotesPanel = () => (
+    <div className="flex flex-col h-full">
+      <div className="flex items-center justify-between p-6 border-b">
+        <h2 className="text-2xl font-bold flex items-center">
+          <StickyNote className="w-6 h-6 mr-2" />
+          Research Notes
+        </h2>
+        <button
+          onClick={() => {
+            setNewNoteText('');
+            setNewNoteCategory('');
+            setShowNoteModal(true);
+          }}
+          disabled={isLoading}
+          className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+        >
+          Add Note
+        </button>
+      </div>
+
+      <div className="flex-1 overflow-y-auto p-6">
+        {notesLoading ? (
+          <div className="text-center text-gray-500 py-8">
+            <Loader className="w-8 h-8 mx-auto mb-4 animate-spin opacity-50" />
+            <p>Loading notes…</p>
+          </div>
+        ) : notesError ? (
+          <div className="text-center text-red-500 py-8">
+            <p>{notesError}</p>
+          </div>
+        ) : notes.length === 0 ? (
+          <div className="text-center text-gray-500 py-8">
+            <StickyNote className="w-12 h-12 mx-auto mb-4 opacity-50" />
+            <p>No notes taken yet. Click “Add Note” to start.</p>
+          </div>
+        ) : (
+          <div className="space-y-4">
+            {notes.map((note, idx) => (
+              <div key={idx} className="bg-white p-4 rounded-lg shadow-md border">
+                <div className="flex items-start justify-between">
+                  <div className="flex-1">
+                    <p className="text-gray-800 mb-2">{note.content}</p>
+                    <div className="flex items-center text-sm text-gray-500">
+                      <span className="bg-blue-100 text-blue-800 px-2 py-1 rounded mr-2">
+                        {note.category || 'general'}
+                      </span>
+                      <span>{new Date(note.timestamp).toLocaleString()}</span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
+  // ─── EXTRACT MODAL ─────────────────────────────────────────────────────────────────
+  const ExtractModal = () => {
+    const textareaRef = useRef(null);
+
+    useEffect(() => {
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = textareaRef.current.value.length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 0);
+    }, []);
+
+    const handleExtractSubmit = async () => {
+      if (!extractQuery.trim() || !currentExtractCollection) return;
+      try {
+        const result = await executeTool('document_extract', {
+          collection_id: currentExtractCollection,
+          query: extractQuery,
+          max_length: 200
+        });
+        if (!result.success) {
+          console.error('Extract error:', result.error);
+          alert(`Failed to extract: ${result.error || 'Unknown'}`);
+          return;
+        }
+        setUsageStats(prev => ({ ...prev, extracts: prev.extracts + 1 }));
+
+        const extractMsg = {
+          role: 'assistant',
+          content: `🔍 Extract:\n\n${result.relevant_chunks.join('\n\n')}`,
+          timestamp: new Date().toISOString()
+        };
+        setMessages(prev => [...prev, extractMsg]);
+        setShowExtractModal(false);
+        setActiveTab('chat');
+        inputRef.current?.focus();
+      } catch (error) {
+        console.error('Extract error:', error);
+        alert('Failed to extract');
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[90%] max-w-md mx-auto">
+          <h3 className="text-lg font-semibold mb-4">Extract from Document</h3>
+          <textarea
+            ref={textareaRef}
+            value={extractQuery}
+            onChange={e => setExtractQuery(e.target.value)}
+            placeholder="Enter your query..."
+            className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-24 mb-4"
+          />
+          <div className="flex justify-end space-x-2">
+            <button
+              onClick={() => {
+                setShowExtractModal(false);
+                inputRef.current?.focus();
+              }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleExtractSubmit}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Extract
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── NOTE MODAL ───────────────────────────────────────────────────────────────────
+  const NoteModal = () => {
+    const textareaRef = useRef(null);
+
+    useEffect(() => {
+      setTimeout(() => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          const len = textareaRef.current.value.length;
+          textareaRef.current.setSelectionRange(len, len);
+        }
+      }, 0);
+    }, []);
+
+    const handleNoteSubmit = async () => {
+      if (!newNoteText.trim()) return;
+      try {
+        const result = await executeTool('take_note', {
+          conversation_id: conversationId,
+          note: newNoteText.trim(),
+          category: newNoteCategory.trim() || 'general'
+        });
+        if (result.error) {
+          throw new Error(result.error);
+        }
+        setShowNoteModal(false);
+        await loadNotes();
+        inputRef.current?.focus();
+      } catch (error) {
+        console.error('Take note error:', error);
+        alert('Failed to save note');
+      }
+    };
+
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-30 flex items-center justify-center z-50">
+        <div className="bg-white rounded-lg p-6 w-[90%] max-w-md mx-auto">
+          <h3 className="text-lg font-semibold mb-4">Add Note</h3>
+          <textarea
+            ref={textareaRef}
+            value={newNoteText}
+            onChange={e => setNewNoteText(e.target.value)}
+            placeholder="Enter note text..."
+            className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none h-24 mb-4"
+          />
+          <input
+            value={newNoteCategory}
+            onChange={e => setNewNoteCategory(e.target.value)}
+            placeholder="Category (optional)"
+            className="w-full border rounded-lg p-2 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4"
+          />
+          <div className="flex justify-end space-x-2">
+            <button
+              onClick={() => {
+                setShowNoteModal(false);
+                inputRef.current?.focus();
+              }}
+              className="px-4 py-2 bg-gray-200 text-gray-700 rounded hover:bg-gray-300"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={handleNoteSubmit}
+              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+            >
+              Save Note
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // ─── MAIN RENDER ──────────────────────────────────────────────────────────────────
+  return (
+    <div className="h-screen bg-gray-50 flex flex-col">
+      {/* Modals */}
+      {showExtractModal && <ExtractModal />}
+      {showNoteModal && <NoteModal />}
+
+      {/* Header */}
+      <header className="bg-white shadow-sm border-b">
+        <div className="px-6 py-4">
+          <h1 className="text-2xl font-bold text-gray-800 flex items-center">
+            <Brain className="w-8 h-8 mr-3 text-blue-600" />
+            SynthesisTalk
+            <span className="ml-3 text-sm font-normal text-gray-500">
+              Intelligent Research Assistant
+            </span>
+          </h1>
+        </div>
+      </header>
+
+      {/* Navigation */}
+      <nav className="bg-white border-b">
+        <div className="px-6">
+          <div className="flex space-x-8">
+            {[
+              { id: 'chat', label: 'Chat', icon: MessageSquare },
+              { id: 'insights', label: 'Insights', icon: Lightbulb },
+              { id: 'visualizations', label: 'Analytics', icon: BarChart3 },
+              { id: 'documents', label: 'Documents', icon: FileText },
+              { id: 'notes', label: 'Notes', icon: StickyNote }
+            ].map(tab => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`flex items-center px-3 py-4 text-sm font-medium border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-blue-500 text-blue-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                <tab.icon className="w-4 h-4 mr-2" />
+                {tab.label}
+              </button>
+            ))}
+          </div>
+        </div>
+      </nav>
+
+      {/* Main Content */}
+      <main className="flex-1 overflow-hidden">
+        {activeTab === 'chat' && <ChatInterface />}
+        {activeTab === 'insights' && <InsightsPanel />}
+        {activeTab === 'visualizations' && <VisualizationsPanel />}
+        {activeTab === 'documents' && <DocumentsPanel />}
+        {activeTab === 'notes' && <NotesPanel />}
+      </main>
+
+      {/* Hidden file input for document upload */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={(e) => {
+          if (e.target.files[0]) uploadFile(e.target.files[0]);
+        }}
+        accept=".pdf,.docx,.txt"
+        className="hidden"
+      />
+    </div>
+  );
 }
