@@ -85,7 +85,7 @@ SYNTHESISTALK/
    source ../venv/bin/activate           # On macOS/Linux
    # or
    ../venv/Scripts/activate              # On Windows
-````
+
 
 2. **Install backend dependencies**
 
