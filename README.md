@@ -125,6 +125,10 @@ SYNTHESISTALK/
 * **backend/.env**
 
   * `GROQ_API_KEY`: Your API key for Groq’s LLM endpoint
+  * OR
+  ```bash
+  set GROQ_API_KEY=your_actual_key_here
+  ```
 
 No other API keys are required. The web-search functionality does not require additional keys (it uses DuckDuckGo Lite internally).
 
@@ -140,7 +144,7 @@ From the project root or the `backend` folder:
 
 ```bash
 # If not already activated, activate your Python venv:
-cd SYNTHESISTALK/backend
+cd SYNTHESISTALK
 source ../venv/bin/activate       # macOS/Linux
 # or ../venv/Scripts/activate     # Windows
 
